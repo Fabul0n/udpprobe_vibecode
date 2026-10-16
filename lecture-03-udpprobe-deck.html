@@ -1,0 +1,1255 @@
+<!doctype html>
+<html lang="ru" data-od-deck-protocol="1"><head><script type="application/json" data-od-external-dependencies>["https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Inter:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap"]</script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>udpprobe: границы UDP · Лекция 03 · Сетевой код</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&amp;family=Inter:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;700&amp;display=swap" rel="stylesheet">
+  <style>
+    /* ===========================================================
+       Deck framework — DO NOT EDIT the rules in this \3c style> block.
+       Edit only inside the second \3c style> block below (per-deck
+       styles) and inside <section class="slide"> bodies.
+
+       Contract this framework provides:
+         - 1920×1080 fixed canvas, scaled to fit the viewport
+         - Only .slide.active is visible at a time
+         - Programmatic prev/next + counter elements kept outside the scaled
+           stage but hidden by default so the host can render the UI chrome
+         - OD Deck Protocol v1 absolute navigation + slide-state events
+         - Keyboard (← → space PgUp PgDn Home End R), half-slide click, and stored
+           position survive iframe focus quirks
+         - "Save as PDF" produces a multi-page vertical PDF, one slide
+           per page, by toggling every slide visible under @media print
+       =========================================================== */
+    :root {
+      /* SLOT: theme tokens — the only top-level CSS the agent edits.
+         Add or override --bg / --fg / --accent / etc. here. */
+      --bg: #0b0e14;
+      --fg: #e8edf5;
+      --muted: #8b94a7;
+      --accent: #22d3ee;
+      --accent2: #eb2f96;
+      --surface: #131a26;
+      --border: #232d3f;
+      --shell: #0b0e14;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--shell);
+      color: var(--fg);
+      font: 18px/1.5 -apple-system, system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    .deck-shell {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+    }
+    .deck-stage {
+      width: 1920px;
+      height: 1080px;
+      background: var(--bg);
+      position: relative;
+      transform-origin: top left;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+    }
+    .slide {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+    /* Visibility toggle hardened with :not(.active) + !important so cascade
+       order can't break it. */
+    .slide:not(.active) { display: none !important; }
+    :where(.slide.active) { display: flex; flex-direction: column; }
+
+    /* Programmatic chrome — counter + prev/next live outside the scaled
+       stage so the host bridge can read/update them, but they stay hidden
+       in preview, presentation, fullscreen, and new-tab modes. */
+    .deck-counter {
+      position: fixed;
+      bottom: 22px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: none;
+      align-items: center;
+      gap: 4px;
+      background: rgba(10, 14, 26, 0.92);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      padding: 6px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #fff;
+      font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 0.18em;
+      z-index: 1000;
+    }
+    .deck-counter button {
+      width: 36px; height: 36px;
+      background: transparent;
+      color: #fff;
+      border: 0;
+      border-radius: 50%;
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: background 0.15s;
+    }
+    .deck-counter button:hover { background: rgba(255, 255, 255, 0.12); }
+    .deck-counter button[disabled] { opacity: 0.3; cursor: default; }
+    .deck-counter .deck-count {
+      padding: 0 14px;
+      letter-spacing: 0.22em;
+    }
+    .deck-counter .deck-count .total { color: rgba(255, 255, 255, 0.5); }
+    .deck-hint {
+      position: fixed;
+      bottom: 26px;
+      right: 28px;
+      color: rgba(255, 255, 255, 0.4);
+      font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      z-index: 999;
+      pointer-events: none;
+      display: none;
+    }
+
+    /* Print / PDF stitching — every slide stacks top-to-bottom, one per
+       page. The viewer's "Share → PDF" relies on this; do not remove. */
+    @media print {
+      @page { size: 1920px 1080px; margin: 0; }
+      html, body {
+        width: 1920px !important;
+        height: auto !important;
+        overflow: visible !important;
+        background: #fff !important;
+      }
+      .deck-shell {
+        position: static !important;
+        display: block !important;
+        inset: auto !important;
+      }
+      .deck-stage {
+        width: 1920px !important;
+        height: auto !important;
+        transform: none !important;
+        box-shadow: none !important;
+        position: static !important;
+      }
+      .slide {
+        display: flex !important;
+        position: relative !important;
+        inset: auto !important;
+        width: 1920px !important;
+        height: 1080px !important;
+        page-break-after: always;
+        break-after: page;
+      }
+      .slide:last-child { page-break-after: auto; break-after: auto; }
+      .deck-counter, .deck-hint { display: none !important; }
+    }
+  </style>
+  <style>
+    /* SLOT: per-deck styles — typography, layout helpers, slide variants.
+       Сетевой код: Глубина/Панель, циан/маджента, Unbounded + Inter +
+       JetBrains Mono, рамки 1px, радиус 8px, сетка 8px. */
+
+    :root {
+      --font-display: 'Unbounded', 'Inter', system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+    }
+
+    body { font-family: var(--font-body); font-size: 24px; line-height: 1.55; }
+    p { text-wrap: pretty; }
+    h1, h2, h3 { text-wrap: balance; }
+
+    /* ─── slide variants ──────────────────────────────────────────── */
+    .s-body  { padding: 72px 96px 120px; justify-content: center; }
+    .s-hero  { padding: 96px 128px 120px; align-items: center; text-align: center; justify-content: center; }
+    .s-panel { background: var(--surface); }
+    .s-panel .code { background: var(--bg); }
+
+    /* ─── brand mark ──────────────────────────────────────────────── */
+    .brand {
+      position: absolute; top: 40px; left: 96px;
+      font-family: var(--font-mono); font-weight: 700; font-size: 18px;
+      letter-spacing: 0.06em; color: var(--fg);
+    }
+    .brand .cur { color: var(--accent); }
+    .s-hero .brand { left: 128px; }
+
+    /* ─── type ────────────────────────────────────────────────────── */
+    .eyebrow {
+      font-family: var(--font-mono); font-size: 15px;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--accent); margin: 0 0 28px;
+    }
+    .eyebrow.dim { color: var(--muted); }
+    .h-hero {
+      font-family: var(--font-display); font-weight: 700;
+      font-size: 92px; line-height: 1.12; letter-spacing: -0.01em;
+      margin: 0 0 28px; max-width: 18ch;
+    }
+    .h-xl {
+      font-family: var(--font-display); font-weight: 700;
+      font-size: 56px; line-height: 1.15; letter-spacing: -0.01em;
+      margin: 0 0 24px; max-width: 26ch;
+    }
+    .h-md {
+      font-family: var(--font-display); font-weight: 500;
+      font-size: 40px; line-height: 1.2; letter-spacing: -0.01em;
+      margin: 0 0 20px; max-width: 30ch;
+    }
+    .lead { font-size: 26px; line-height: 1.55; color: var(--muted); max-width: 58ch; margin: 0; }
+    .s-hero .lead { margin-inline: auto; }
+    .lead b { color: var(--fg); font-weight: 500; }
+    .meta { font-family: var(--font-mono); font-size: 15px; color: var(--muted); }
+
+    /* ─── code / terminal panel ───────────────────────────────────── */
+    .code {
+      background: var(--surface);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 32px 40px;
+      font-family: var(--font-mono); font-size: 22px; line-height: 1.6;
+      color: var(--fg); text-align: left;
+      white-space: pre; overflow: hidden;
+    }
+    .code .cm { color: var(--muted); }
+    .code .kw { color: var(--accent); }
+    .code .st { color: var(--accent2); }
+
+    /* ─── two-column compare ──────────────────────────────────────── */
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; margin-top: 36px; }
+    .col-card {
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 32px 36px; background: var(--surface);
+    }
+    .s-panel .col-card { background: var(--bg); }
+    .col-card h3 {
+      font-family: var(--font-mono); font-size: 18px; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      margin: 0 0 20px; color: var(--fg);
+    }
+    .col-card h3 .tag2 { color: var(--accent2); }
+    .tick-list { list-style: none; }
+    .tick-list li {
+      position: relative; padding-left: 32px; margin-bottom: 14px;
+      font-size: 22px; line-height: 1.45; color: var(--muted);
+    }
+    .tick-list li b { color: var(--fg); font-weight: 500; }
+    .tick-list li::before {
+      content: ""; position: absolute; left: 0; top: 12px;
+      width: 14px; height: 2px; background: var(--border);
+    }
+    .tick-list.plus li::before { background: var(--accent); }
+    .tick-list.minus li::before { background: var(--accent2); }
+
+    /* ─── claim pair: нельзя / правильно ──────────────────────────── */
+    .claim-pair { display: grid; gap: 16px; width: min(1240px, 100%); margin: 56px auto 0; }
+    .claim {
+      display: flex; align-items: center; gap: 32px;
+      border: 1px solid var(--border); border-radius: 8px;
+      background: var(--surface); padding: 28px 36px; text-align: left;
+    }
+    .claim-mark {
+      flex: none; font-family: var(--font-mono); font-size: 14px; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); color: var(--muted);
+    }
+    .claim.bad .claim-mark { color: var(--accent2); border-color: var(--accent2); }
+    .claim.good { border-color: var(--accent); }
+    .claim.good .claim-mark { color: var(--accent); border-color: var(--accent); }
+    .claim p { font-family: var(--font-mono); font-size: 25px; line-height: 1.45; color: var(--fg); }
+    .claim.bad p { color: var(--muted); }
+
+    /* ─── point rows ──────────────────────────────────────────────── */
+    .pt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; margin-top: 44px; }
+    .pt-grid.four { grid-template-columns: repeat(4, 1fr); gap: 32px; }
+    .pt { border-top: 2px solid var(--border); padding-top: 20px; }
+    .pt.hot { border-top-color: var(--accent2); }
+    .pt h3 { font-size: 24px; font-weight: 700; margin: 0 0 10px; letter-spacing: -0.005em; }
+    .pt h3 .en { display: block; font-family: var(--font-mono); font-weight: 400; font-size: 15px; color: var(--muted); letter-spacing: 0.06em; margin-top: 4px; }
+    .pt p { color: var(--muted); margin: 0; font-size: 20px; line-height: 1.5; }
+
+    /* ─── term list ───────────────────────────────────────────────── */
+    .terms { margin-top: 32px; }
+    .term {
+      display: grid; grid-template-columns: 300px 1fr; gap: 32px;
+      padding: 16px 0; border-top: 1px solid var(--border);
+      align-items: baseline;
+    }
+    .term:last-child { border-bottom: 1px solid var(--border); }
+    .term .tt { font-family: var(--font-mono); font-weight: 700; font-size: 26px; color: var(--accent2); }
+    .term .tt .ru { display: block; font-family: var(--font-body); font-weight: 500; font-size: 17px; color: var(--muted); margin-top: 2px; }
+    .term .td { font-size: 22px; line-height: 1.45; color: var(--muted); }
+    .term .td b { color: var(--fg); font-weight: 500; }
+
+    /* ─── question list ───────────────────────────────────────────── */
+    .q-list { margin-top: 32px; }
+    .q {
+      display: grid; grid-template-columns: 64px 1fr; gap: 24px;
+      padding: 14px 0; border-top: 1px solid var(--border); align-items: baseline;
+    }
+    .q:last-child { border-bottom: 1px solid var(--border); }
+    .q .qn { font-family: var(--font-mono); font-size: 18px; color: var(--accent2); }
+    .q .qt { font-size: 23px; line-height: 1.4; }
+    .q .qt small { display: block; font-size: 18px; color: var(--muted); margin-top: 6px; }
+
+    /* ─── ladder chips (MTU ladder / rate sweep) ──────────────────── */
+    .ladder { display: flex; gap: 12px; margin-top: 36px; flex-wrap: wrap; }
+    .ladder .step {
+      border: 1px solid var(--border); border-radius: 8px;
+      background: var(--bg);
+      padding: 14px 22px;
+      font-family: var(--font-mono); font-size: 20px; color: var(--fg);
+    }
+    .s-panel .ladder .step { background: var(--surface); }
+    .ladder .step.hot { border-color: var(--accent2); color: var(--accent2); }
+
+    /* ─── homework / acceptance card ──────────────────────────────── */
+    .hw { margin-top: 40px; text-align: left; max-width: 1150px; }
+    .hw .hw-title {
+      font-family: var(--font-mono); font-size: 15px; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--accent); margin: 0 0 18px;
+    }
+    .hw ol { margin: 0; padding-left: 28px; }
+    .hw li { font-size: 23px; line-height: 1.5; color: var(--muted); margin-bottom: 12px; }
+    .hw li b { color: var(--fg); font-weight: 500; }
+    .hw li code { font-family: var(--font-mono); font-size: 0.92em; color: var(--fg); }
+
+    /* ─── component map (slide 04) ────────────────────────────────── */
+    .cmap { width: 100%; height: auto; display: block; margin-top: 20px; }
+    .cmap text { font-family: var(--font-mono); }
+    .cmap .pkg { fill: none; stroke: var(--border); stroke-width: 1; stroke-dasharray: 6 5; }
+    .cmap .pkg-title { font-size: 15px; letter-spacing: 0.08em; fill: var(--muted); }
+    .cmap .comp { fill: var(--surface); stroke: var(--border); stroke-width: 1; }
+    .cmap .comp.iface { stroke: var(--accent2); }
+    .cmap .comp-name { font-size: 18px; font-weight: 700; fill: var(--fg); }
+    .cmap .comp-name.sm { font-size: 15px; }
+    .cmap .comp-sub { font-size: 13px; fill: var(--muted); }
+    .cmap .flow { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+    .cmap .flow.impl { stroke-dasharray: 5 5; }
+    .cmap .edge-label { font-size: 14px; fill: var(--muted); }
+    .cmap .joint { fill: var(--muted); }
+
+    /* ─── class diagram (slide 16) ──────────────────────────────── */
+    .cmap .cls { fill: var(--surface); stroke: var(--border); stroke-width: 1; }
+    .cmap .cls.iface { stroke: var(--accent2); }
+    .cmap .cls-name { font-size: 18px; font-weight: 700; fill: var(--fg); }
+    .cmap .cls-role, .cmap .cls-stereo { font-size: 13px; fill: var(--muted); }
+    .cmap .cls-stereo { letter-spacing: 0.06em; }
+    .cmap .cls-sep { stroke: var(--border); stroke-width: 1; }
+    .cmap .member { font-size: 14px; fill: var(--muted); }
+    .cmap .member.pub { fill: var(--fg); }
+
+    /* ─── footer ──────────────────────────────────────────────────── */
+    .s-foot {
+      position: absolute; left: 96px; right: 96px; bottom: 36px;
+      display: flex; justify-content: space-between; align-items: baseline;
+      border-top: 1px solid var(--border); padding-top: 14px;
+      font-family: var(--font-mono); font-size: 14px; color: var(--muted);
+      letter-spacing: 0.06em;
+    }
+    .s-hero .s-foot { left: 128px; right: 128px; }
+
+    .notes { display: none; }
+  </style>
+</head>
+<body>
+  <div class="deck-shell">
+    <div class="deck-stage" id="deck-stage">
+
+      <!-- 1 · Обложка -->
+      <section class="slide active s-hero" data-screen-label="01 Обложка" data-od-id="slide-cover">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow">Курс · Сетевое программирование на Go · Тема 02 · Лекция 03</p>
+        <h1 class="h-hero" data-od-id="cover-title">udpprobe: границы UDP</h1>
+        <p class="lead">Строим инструмент исследования: какой payload реально проходит, где начинается fragmentation и на каком rate путь проваливается.</p>
+        <aside class="notes">Тайминг: 0:00–0:07. Открытие. Сегодня меняем характер задачи. UDP echo мы уже умеем — это полезный минимум, но он слишком быстро превращается в «написал — забыл». Следующая задача — не просто сетевая программа, а инструмент исследования границ UDP. Назовём его udpprobe.</aside>
+      </section>
+
+      <!-- 2 · Открытие: планка --><!-- 2 · Открытие: планка --><section class="slide s-hero" data-screen-label="02 Планка" data-od-id="slide-bar">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow dim">Открытие</p>
+        <h2 class="h-xl" style="max-width: 24ch;">Код сгенерировать легко. Эксперимент поставить сложно.</h2>
+        <p class="lead">Цель udpprobe — не «отправить пакет и получить ответ». Цель — ответить на <b>неприятные вопросы</b> о пути.</p>
+        <aside class="notes">Тайминг: 0:00–0:07. Сложность здесь не в синтаксисе. Сложность в том, чтобы не обмануть самого себя. Если пакет не вернулся, причин может быть пять.</aside>
+      </section>
+
+      <!-- 3 · Неприятные вопросы --><!-- 3 · Неприятные вопросы --><section class="slide s-body" data-screen-label="03 Неприятные вопросы" data-od-id="slide-questions">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow">Что должен измерять udpprobe</p>
+        <h2 class="h-md">Семь неприятных вопросов</h2>
+        <div class="q-list">
+          <div class="q"><span class="qn">01</span><span class="qt">Какой максимальный payload реально проходит?</span></div>
+          <div class="q"><span class="qn">02</span><span class="qt">Где начинается fragmentation?</span></div>
+          <div class="q"><span class="qn">03</span><span class="qt">Потери случайны — или идут пачками?</span></div>
+          <div class="q"><span class="qn">04</span><span class="qt">Нарушается ли порядок пакетов и приходят ли дубликаты?</span></div>
+          <div class="q"><span class="qn">05</span><span class="qt">При каком темпе отправки начинается провал?</span></div>
+          <div class="q"><span class="qn">06</span><span class="qt">Что происходит с RTT и jitter под нагрузкой?</span></div>
+          <div class="q"><span class="qn">07</span><span class="qt">Как долго живёт тишина, прежде чем путь становится подозрительным?</span></div>
+        </div>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>03</span></div>
+        <aside class="notes">Тайминг: 0:00–0:07. Прочитать список вопросов. [Пауза.] Это и есть спецификация инструмента: каждый вопрос превратится в режим работы или в метрику отчёта.</aside>
+      </section>
+
+      <!-- 4 · Компонентная схема --><!-- 4 · Компонентная схема --><section class="slide s-body" data-screen-label="04 Компоненты" data-od-id="slide-components">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow">Карта компонентов</p>
+        <h2 class="h-md">Из чего собран udpprobe</h2>
+        <svg class="cmap" viewBox="0 0 1728 660" role="img" aria-label="Компонентная схема udpprobe: CLI, пакеты internal/probe и internal/packetconn, реальная и подменная сеть" data-od-id="diagram-components">
+          <defs>
+            <marker id="cmap-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#8b94a7"/>
+            </marker>
+          </defs>
+
+          <!-- packages -->
+          <rect class="pkg" x="540" y="50" width="560" height="380" rx="8"/>
+          <text class="pkg-title" x="1084" y="80" text-anchor="end">internal/probe</text>
+          <rect class="pkg" x="540" y="490" width="760" height="150" rx="8"/>
+          <text class="pkg-title" x="1284" y="520" text-anchor="end">internal/packetconn</text>
+
+          <!-- edges -->
+          <path class="flow" d="M180,332 H250" marker-end="url(#cmap-arr)"/>
+          <path class="flow" d="M470,315 H520 V130 H600" marker-end="url(#cmap-arr)"/>
+          <path class="flow" d="M470,345 H510 V230 H600" marker-end="url(#cmap-arr)"/>
+          <path class="flow" d="M360,372 V455 H955 V360" marker-end="url(#cmap-arr)"/>
+          <path class="flow" d="M790,130 H830 V180 H860" marker-end="url(#cmap-arr)"/>
+          <path class="flow" d="M955,210 V300" marker-end="url(#cmap-arr)"/>
+          <path class="flow" d="M790,145 H820 V330 H790" marker-end="url(#cmap-arr)"/>
+          <path class="flow" d="M695,260 V300" marker-end="url(#cmap-arr)"/>
+          <path class="flow" d="M600,130 H578 M600,230 H578 M578,130 V560"/>
+          <path class="flow" d="M578,560 H600" marker-end="url(#cmap-arr)"/>
+          <circle class="joint" cx="578" cy="130" r="3"/>
+          <circle class="joint" cx="578" cy="230" r="3"/>
+          <path class="flow impl" d="M850,560 H790" marker-end="url(#cmap-arr)"/>
+          <path class="flow impl" d="M1195,590 V625 H720 V590" marker-end="url(#cmap-arr)"/>
+          <path class="flow" d="M945,530 V468 H1540 V480" marker-end="url(#cmap-arr)"/>
+          <path class="flow" d="M1290,560 H1350 V610 H1400" marker-end="url(#cmap-arr)"/>
+
+          <!-- edge labels -->
+          <text class="edge-label" x="215" y="285" text-anchor="middle">run server/mtu/train/sweep</text>
+          <text class="edge-label" x="532" y="90">mtu/train/sweep</text>
+          <text class="edge-label" x="505" y="285" text-anchor="end">server</text>
+          <text class="edge-label" x="600" y="447">render REPORT.md</text>
+          <text class="edge-label" x="838" y="122">замеры</text>
+          <text class="edge-label" x="968" y="258">stats/json</text>
+          <text class="edge-label" transform="translate(834 240) rotate(-90)" text-anchor="middle">encode/decode</text>
+          <text class="edge-label" x="706" y="284">validate/echo</text>
+          <text class="edge-label" transform="translate(566 345) rotate(-90)" text-anchor="middle">datagram in/out</text>
+
+          <!-- components -->
+          <rect class="comp" x="30" y="300" width="150" height="64" rx="8"/>
+          <text class="comp-name" x="105" y="326" text-anchor="middle">Пользователь</text>
+          <text class="comp-sub" x="105" y="346" text-anchor="middle">«actor»</text>
+
+          <rect class="comp" x="250" y="292" width="220" height="80" rx="8"/>
+          <text class="comp-name" x="360" y="330" text-anchor="middle">udpprobe CLI</text>
+          <text class="comp-sub" x="360" y="352" text-anchor="middle">cmd</text>
+
+          <rect class="comp" x="600" y="100" width="190" height="60" rx="8"/>
+          <text class="comp-name" x="695" y="137" text-anchor="middle">Client</text>
+
+          <rect class="comp" x="600" y="200" width="190" height="60" rx="8"/>
+          <text class="comp-name" x="695" y="237" text-anchor="middle">Server</text>
+
+          <rect class="comp" x="600" y="300" width="190" height="60" rx="8"/>
+          <text class="comp-name" x="695" y="324" text-anchor="middle">Codec</text>
+          <text class="comp-sub" x="695" y="344" text-anchor="middle">ProbePacket</text>
+
+          <rect class="comp" x="860" y="150" width="190" height="60" rx="8"/>
+          <text class="comp-name" x="955" y="187" text-anchor="middle">Analyzer</text>
+
+          <rect class="comp" x="860" y="300" width="190" height="60" rx="8"/>
+          <text class="comp-name" x="955" y="324" text-anchor="middle">Report</text>
+          <text class="comp-sub" x="955" y="344" text-anchor="middle">REPORT.md</text>
+
+          <rect class="comp iface" x="600" y="530" width="190" height="60" rx="8"/>
+          <text class="comp-name" x="695" y="554" text-anchor="middle">PacketConn</text>
+          <text class="comp-sub" x="695" y="574" text-anchor="middle">«interface»</text>
+
+          <rect class="comp" x="850" y="530" width="190" height="60" rx="8"/>
+          <text class="comp-name" x="945" y="567" text-anchor="middle">RealUDPConn</text>
+
+          <rect class="comp" x="1100" y="530" width="190" height="60" rx="8"/>
+          <text class="comp-name" x="1195" y="567" text-anchor="middle">FakeNetwork</text>
+
+          <rect class="comp" x="1400" y="480" width="280" height="60" rx="8"/>
+          <text class="comp-name sm" x="1540" y="517" text-anchor="middle">UDP socket / OS network</text>
+
+          <rect class="comp" x="1400" y="580" width="280" height="60" rx="8"/>
+          <text class="comp-name" x="1540" y="604" text-anchor="middle">test scenario</text>
+          <text class="comp-sub" x="1540" y="624" text-anchor="middle">потери / dup / reorder / delay</text>
+        </svg>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>04</span></div>
+        <aside class="notes">Тайминг: 0:07–0:18. Прежде чем открыть редактор — карта компонентов. CLI только разбирает subcommands и собирает зависимости. Вся логика — в internal/probe: codec, client, server, analyzer, report. Ключевой шов — интерфейс PacketConn: через него RealUDPConn и FakeNetwork взаимозаменяемы, поэтому сценарий с потерями, дубликатами и нарушением порядка можно прогнать вообще без сети.</aside>
+      </section>
+
+      <!-- 5 · Каркас проекта --><!-- 5 · Каркас проекта --><section class="slide s-body s-panel" data-screen-label="05 Каркас проекта" data-od-id="slide-layout">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow">Базовый каркас Go-проекта</p>
+        <h2 class="h-xl">Инструмент, а не демо на один запуск.</h2>
+        <div class="cols" style="grid-template-columns: 1fr 1.1fr; align-items: stretch;">
+          <div class="code" data-od-id="code-tree"><span class="cm">// структура проекта</span>
+udpprobe/
+  go.mod
+  cmd/udpprobe/main.go
+  internal/probe/packet.go
+  internal/probe/client.go
+  internal/probe/server.go
+  internal/probe/report.go
+  internal/packetconn/...</div>
+          <div class="col-card">
+            <h3>Почему так</h3>
+            <ul class="tick-list">
+              <li><b>cmd/udpprobe</b> — только входная точка: flags, subcommands, сборка зависимостей</li>
+              <li>Вся логика — в <b>internal/probe</b>: это не публичная библиотека, стабильный API наружу не обещаем</li>
+              <li><b>go.mod</b> фиксирует модуль и версию Go: воспроизводимость начинается до первого пакета</li>
+            </ul>
+          </div>
+        </div>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>05</span></div>
+        <aside class="notes">Тайминг: 0:07–0:18. Начнём с инструментов Go, которые понадобятся для такого проекта. Не для демо на один запуск, а для инструмента, которым можно пользоваться. Почему internal? Потому что это учебный инструмент с понятными границами, а не публичная библиотека.</aside>
+      </section>
+
+      <!-- 6 · Маленький протокол --><!-- 6 · Маленький протокол --><section class="slide s-body" data-screen-label="06 Маленький протокол" data-od-id="slide-protocol-shape">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow dim">Акцент</p>
+        <h2 class="h-xl" style="max-width: 28ch;">Хороший сетевой инструмент собран как маленький протокол.</h2>
+        <p class="lead">А не как набор <b>main.go</b> с глобальными переменными. Границы пакетов продуманы заранее: codec отдельно, транспорт отдельно, отчёт отдельно.</p>
+        <div class="pt-grid">
+          <div class="pt hot" data-od-id="shape-packet">
+            <h3>packet.go</h3>
+            <p>Формат пробы: encode/decode, валидация protocol и version.</p>
+          </div>
+          <div class="pt hot" data-od-id="shape-client">
+            <h3>client.go / server.go</h3>
+            <p>Логика обмена: отправка серий, эхо-ответы, лимиты.</p>
+          </div>
+          <div class="pt hot" data-od-id="shape-report">
+            <h3>report.go</h3>
+            <p>Метрики и вывод: факт, предположение, неизвестное.</p>
+          </div>
+        </div>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>06</span></div>
+        <aside class="notes">Тайминг: 0:07–0:18. [Акцент.] Хороший сетевой инструмент должен быть собран как маленький протокол, а не как набор main.go с глобальными переменными.</aside>
+      </section>
+
+      <!-- 7 · Subcommands --><!-- 7 · Subcommands --><section class="slide s-body" data-screen-label="07 Subcommands" data-od-id="slide-subcommands">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow">Subcommands и flags</p>
+        <h2 class="h-xl">Проект начинается не с send, а с ограничений.</h2>
+        <div class="code" data-od-id="code-commands" style="margin-top: 16px;"><span class="cm"># эхо-сервер с лимитами</span>
+udpprobe server --addr 127.0.0.1:9999 --max-echo 1200 --rate-limit 200/s
+
+<span class="cm"># поиск границы размера</span>
+udpprobe mtu --to 127.0.0.1:9999 --min 512 --max 1600 --mode ladder
+
+<span class="cm"># длинная серия проб: потери / reorder / duplicate / RTT</span>
+udpprobe train --to 127.0.0.1:9999 --count 10000 --size 1200 --rate 500pps
+
+<span class="cm"># перебор rate: где начинается провал</span>
+udpprobe sweep --to 127.0.0.1:9999 --size 1200 --rates 50,100,500,1000pps</div>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>07</span></div>
+        <aside class="notes">Тайминг: 0:18–0:30. Инструмент исследования UDP легко превратить во flooder. Поэтому проект начинается не с send, а с ограничений. Разобрать четыре команды: server, mtu, train, sweep.</aside>
+      </section>
+
+      <!-- 8 · Не источник аварии --><!-- 8 · Не источник аварии --><section class="slide s-hero" data-screen-label="08 Не источник аварии" data-od-id="slide-no-accident">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow dim">Ключевая фраза</p>
+        <h2 class="h-xl" style="max-width: 26ch;">Инструмент, который исследует потери, не должен сам становиться источником аварии.</h2>
+        <aside class="notes">Тайминг: 0:18–0:30. [Ключевая фраза.] Проговорить медленно. Инструмент, который исследует потери, не должен сам становиться источником аварии.</aside>
+      </section>
+
+      <!-- 9 · Чем читать сеть --><!-- 9 · Чем читать сеть --><section class="slide s-body s-panel" data-screen-label="09 Чем читать сеть" data-od-id="slide-packetconn">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow">netip · net.UDPConn · PacketConn</p>
+        <h2 class="h-xl">Адрес — значение, сеть — интерфейс.</h2>
+        <div class="cols" style="grid-template-columns: 1.1fr 1fr; align-items: stretch;">
+          <div class="code" data-od-id="code-packetconn"><span class="kw">type</span> PacketConn <span class="kw">interface</span> {
+    ReadFromUDPAddrPort([]byte) (int, netip.AddrPort, error)
+    WriteToUDPAddrPort([]byte, netip.AddrPort) (int, error)
+    SetReadDeadline(time.Time) error
+    Close() error
+}</div>
+          <div class="col-card">
+            <h3>Два режима</h3>
+            <ul class="tick-list">
+              <li>Адреса — <b>netip.AddrPort</b>, а не строки: строка удобна для CLI, внутри протокола адрес типизирован</li>
+              <li>Реальный режим — <b>net.UDPConn</b></li>
+              <li>Тесты — <b>PacketConn</b> поверх fake network, где потери управляемы</li>
+            </ul>
+          </div>
+        </div>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>09</span></div>
+        <aside class="notes">Тайминг: 0:30–0:43. Для адресов используем netip.AddrPort, а не строки. Сеть читаем через net.UDPConn в реальном режиме и через PacketConn в тестах. Это уже знакомый интерфейс — он важен не только для miniQUIC, но и для исследования.</aside>
+      </section>
+
+      <!-- 10 · Вопрос · Fake network --><!-- 10 · Вопрос · Fake network --><section class="slide s-hero" data-screen-label="10 Вопрос · Fake network" data-od-id="slide-fake-question">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow dim">Вопрос аудитории</p>
+        <h2 class="h-xl" style="max-width: 24ch;">Почему нельзя начинать сразу с реальной сети?</h2>
+        <aside class="notes">Тайминг: 0:30–0:43. [Вопрос аудитории.] Спросить зал: почему нельзя начинать сразу с реальной сети? Собрать ответы, не подсказывая. Следующий слайд — ответ и порядок калибровки.</aside>
+      </section>
+
+      <!-- 11 · Fake network сначала --><!-- 11 · Fake network сначала --><section class="slide s-body" data-screen-label="11 Fake network сначала" data-od-id="slide-fake-first">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow dim">Ответ</p>
+        <h2 class="h-xl" style="max-width: 30ch;">Почему нельзя начинать сразу с реальной сети?</h2>
+        <p class="lead" style="margin-top: 12px;">Потому что мы не поймём, <b>инструмент измерил сеть — или свою же ошибку</b>.</p>
+        <div class="code" style="margin-top: 32px; max-width: 1080px;"><span class="cm">// порядок калибровки</span>
+1. fake network <span class="cm">// известные параметры: потери, delay, reorder заданы нами</span>
+2. реальный путь  <span class="cm">// только после того, как инструмент доказал себя на известном</span></div>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>11</span></div>
+        <aside class="notes">Тайминг: 0:30–0:43. [Вопрос аудитории.] Почему нельзя начинать сразу с реальной сети? [Ответы.] Потому что мы не поймём, инструмент измерил сеть или свою же ошибку. Сначала fake network с известными параметрами, потом реальный путь.</aside>
+      </section>
+
+      <!-- 12 · Время — это данные --><!-- 12 · Время — это данные --><section class="slide s-body" data-screen-label="12 Время — это данные" data-od-id="slide-time">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow">Время, таймеры, rate limiting</p>
+        <h2 class="h-md">В udpprobe время — это данные</h2>
+        <div class="terms">
+          <div class="term">
+            <span class="tt">time.Now()<span class="ru">timestamps</span></span>
+            <span class="td">Отметки <b>send/receive</b> на каждую пробу.</span>
+          </div>
+          <div class="term">
+            <span class="tt">time.Ticker<span class="ru">равномерная отправка</span></span>
+            <span class="td">Стабильный темп серии, а не «как получится».</span>
+          </div>
+          <div class="term">
+            <span class="tt">time.Timer<span class="ru">deadline</span></span>
+            <span class="td">Граница конкретной фазы эксперимента.</span>
+          </div>
+          <div class="term">
+            <span class="tt">time.Since<span class="ru">RTT</span></span>
+            <span class="td">Длительность оборота по паре «проба — ответ».</span>
+          </div>
+          <div class="term">
+            <span class="tt">monotonic<span class="ru">часы Go</span></span>
+            <span class="td">Монотонное время для измерений длительности — без сюрпризов NTP.</span>
+          </div>
+        </div>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>12</span></div>
+        <aside class="notes">Тайминг: 0:43–0:55. Нам нужны: time.Now() для send/receive timestamps; time.Ticker для равномерной отправки; time.Timer для deadline конкретной фазы; time.Since для RTT; монотонное время Go для измерений длительности.</aside>
+      </section>
+
+      <!-- 13 · Равномерная отправка --><!-- 13 · Равномерная отправка --><section class="slide s-body s-panel" data-screen-label="13 Равномерная отправка" data-od-id="slide-ticker">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow">Rate limit в обе стороны</p>
+        <h2 class="h-xl">Темп контролирует инструмент, а не сеть.</h2>
+        <div class="cols" style="grid-template-columns: 1.15fr 1fr; align-items: stretch;">
+          <div class="code" data-od-id="code-ticker">ticker := time.NewTicker(interval)
+<span class="kw">defer</span> ticker.Stop()
+
+<span class="kw">for</span> seq := uint64(0); seq &lt; count; seq++ {
+    <span class="kw">select</span> {
+    <span class="kw">case</span> &lt;-ticker.C:
+        sendProbe(seq)
+    <span class="kw">case</span> &lt;-ctx.Done():
+        <span class="kw">return</span> ctx.Err()
+    }
+}</div>
+          <div class="col-card">
+            <h3>Лимиты в обе стороны</h3>
+            <ul class="tick-list minus">
+              <li>Клиент не должен превращаться в <b>шторм</b></li>
+              <li>Сервер не отвечает быстрее, чем разрешено: <b>token bucket</b> или минимальный интервал между ответами на один адрес</li>
+            </ul>
+          </div>
+        </div>
+        <p class="lead" style="margin-top: 36px;">Если инструмент не контролирует темп, он измеряет не сеть, а <b>собственную невоспитанность</b>.</p>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>13</span></div>
+        <aside class="notes">Тайминг: 0:43–0:55. Разобрать пример равномерной отправки через Ticker. Rate limit нужен в обе стороны: клиент не должен превращаться в шторм, сервер не должен отвечать быстрее, чем разрешено. [Акцент.] Если инструмент не контролирует темп, он измеряет не сеть, а собственную невоспитанность.</aside>
+      </section>
+
+      <!-- 14 · Probe packet --><!-- 14 · Probe packet --><section class="slide s-body s-panel" data-screen-label="14 Формат" data-od-id="slide-packet">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow">Probe protocol поверх UDP</p>
+        <h2 class="h-xl">Формат</h2>
+        <div class="code" data-od-id="code-packet-format" style="margin-top: 16px;">protocol   uint16   <span class="cm">// отличить наш probe от мусора</span>
+version    uint8    <span class="cm">// v1</span>
+type       uint8    <span class="cm">// probe_request / probe_response</span>
+flags      uint8    <span class="cm">// echo_small, no_padding, token_present</span>
+seq        uint64   <span class="cm">// номер пробы</span>
+send_ts    int64    <span class="cm">// client send time, unix nano</span>
+size       uint16   <span class="cm">// заявленный размер payload</span>
+token      uint64   <span class="cm">// optional shared token</span>
+payload    []byte   <span class="cm">// padding до нужного размера</span></div>
+        <p class="lead" style="margin-top: 32px;">Не production-протокол, но аккуратный: <b>маленький и честный</b> — по нему видно, что произошло с каждой пробой.</p>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>14</span></div>
+        <aside class="notes">Тайминг: 0:55–1:08. Нужен маленький probe protocol поверх UDP. Не production, но аккуратный. Пройтись по полям формата.</aside>
+      </section>
+
+      <!-- 15 · Почему эти поля --><!-- 15 · Почему эти поля --><section class="slide s-body" data-screen-label="15 Почему эти поля" data-od-id="slide-fields-why">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow dim">Разбор формата</p>
+        <h2 class="h-xl">Каждое поле отвечает на конкретное «почему».</h2>
+        <div class="pt-grid">
+          <div class="pt hot" data-od-id="why-send-ts">
+            <h3>send_ts<span class="en">unix nano</span></h3>
+            <p>Сервер возвращает его обратно, и клиент считает RTT <b>без доверия часам сервера</b>.</p>
+          </div>
+          <div class="pt hot" data-od-id="why-size">
+            <h3>size<span class="en">явно</span></h3>
+            <p>Мы исследуем размер. Протокол обязан знать, <b>сколько просил и сколько получил</b> — «и так понятно» не считается.</p>
+          </div>
+          <div class="pt hot" data-od-id="why-protocol">
+            <h3>protocol / version<span class="en">свой / чужой</span></h3>
+            <p>UDP socket может получить чужой мусор. Инструмент исследования обязан <b>отбрасывать не своё</b>.</p>
+          </div>
+        </div>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>15</span></div>
+        <aside class="notes">Тайминг: 0:55–1:08. Почему send_ts внутри? Потому что сервер должен вернуть его обратно, и клиент посчитает RTT без доверия часам сервера. Почему size явно? Потому что мы исследуем размер. Почему protocol/version? Потому что UDP socket может получить чужой мусор. [Акцент.] Формат должен быть маленьким, но честным.</aside>
+      </section>
+
+      <!-- 16 · Диаграмма классов --><!-- 16 · Диаграмма классов --><section class="slide s-body" data-screen-label="16 Классы" data-od-id="slide-classes">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow">Карта классов</p>
+        <h2 class="h-md">Где состояние и кто за него отвечает</h2>
+        <svg class="cmap" viewBox="0 0 1728 700" role="img" aria-label="Диаграмма классов udpprobe: ProbePacket, Client, Server, Analyzer, Sample, конфиги и интерфейс PacketConn с двумя реализациями" data-od-id="diagram-classes">
+          <defs>
+            <marker id="cls-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#8b94a7"/>
+            </marker>
+          </defs>
+
+          <!-- ClientConfig -->
+          <rect class="cls" x="56" y="60" width="300" height="245" rx="8"/>
+          <text class="cls-name" x="72" y="90">ClientConfig</text>
+          <line class="cls-sep" x1="56" y1="104" x2="356" y2="104"/>
+          <text class="member pub" x="72" y="128">+To netip.AddrPort</text>
+          <text class="member pub" x="72" y="155">+Count uint64</text>
+          <text class="member pub" x="72" y="182">+Size int</text>
+          <text class="member pub" x="72" y="209">+RatePPS int</text>
+          <text class="member pub" x="72" y="236">+Timeout time.Duration</text>
+          <text class="member pub" x="72" y="263">+AllowRemote bool</text>
+          <text class="member pub" x="72" y="290">+Token uint64</text>
+
+          <!-- Client -->
+          <rect class="cls" x="56" y="360" width="300" height="200" rx="8"/>
+          <text class="cls-name" x="72" y="390">Client</text>
+          <text class="cls-role" x="72" y="410">сценарии эксперимента</text>
+          <line class="cls-sep" x1="56" y1="420" x2="356" y2="420"/>
+          <text class="member" x="72" y="444">-pc PacketConn</text>
+          <text class="member" x="72" y="471">-cfg ClientConfig</text>
+          <text class="member pub" x="72" y="498">+RunMTULadder(ctx) MTUReport</text>
+          <text class="member pub" x="72" y="525">+RunTrain(ctx) TrainReport</text>
+          <text class="member pub" x="72" y="552">+RunSweep(ctx) SweepReport</text>
+
+          <!-- ProbePacket -->
+          <rect class="cls" x="400" y="60" width="340" height="380" rx="8"/>
+          <text class="cls-name" x="416" y="90">ProbePacket</text>
+          <text class="cls-role" x="416" y="110">только формат</text>
+          <line class="cls-sep" x1="400" y1="120" x2="740" y2="120"/>
+          <text class="member pub" x="416" y="144">+Protocol uint16</text>
+          <text class="member pub" x="416" y="171">+Version uint8</text>
+          <text class="member pub" x="416" y="198">+Type uint8</text>
+          <text class="member pub" x="416" y="225">+Flags uint8</text>
+          <text class="member pub" x="416" y="252">+Seq uint64</text>
+          <text class="member pub" x="416" y="279">+SendTS int64</text>
+          <text class="member pub" x="416" y="306">+Size uint16</text>
+          <text class="member pub" x="416" y="333">+Token uint64</text>
+          <text class="member pub" x="416" y="360">+Payload []byte</text>
+          <line class="cls-sep" x1="400" y1="372" x2="740" y2="372"/>
+          <text class="member pub" x="416" y="396">+Encode() ([]byte, error)</text>
+          <text class="member pub" x="416" y="423">+Decode(b) (ProbePacket, error)</text>
+
+          <!-- Analyzer -->
+          <rect class="cls" x="400" y="500" width="340" height="150" rx="8"/>
+          <text class="cls-name" x="416" y="530">Analyzer</text>
+          <text class="cls-role" x="416" y="550">статистика из samples</text>
+          <line class="cls-sep" x1="400" y1="560" x2="740" y2="560"/>
+          <text class="member pub" x="416" y="584">+Train(samples) TrainStats</text>
+          <text class="member pub" x="416" y="611">+MTU(ladder) MTUStats</text>
+          <text class="member pub" x="416" y="638">+Sweep(runs) SweepStats</text>
+
+          <!-- ServerConfig -->
+          <rect class="cls" x="800" y="60" width="300" height="160" rx="8"/>
+          <text class="cls-name" x="816" y="90">ServerConfig</text>
+          <line class="cls-sep" x1="800" y1="104" x2="1100" y2="104"/>
+          <text class="member pub" x="816" y="128">+Addr netip.AddrPort</text>
+          <text class="member pub" x="816" y="155">+MaxEcho int</text>
+          <text class="member pub" x="816" y="182">+RateLimitPerSec int</text>
+          <text class="member pub" x="816" y="209">+Token uint64</text>
+
+          <!-- Server -->
+          <rect class="cls" x="800" y="280" width="300" height="150" rx="8"/>
+          <text class="cls-name" x="816" y="310">Server</text>
+          <text class="cls-role" x="816" y="330">безопасное эхо с лимитами</text>
+          <line class="cls-sep" x1="800" y1="340" x2="1100" y2="340"/>
+          <text class="member" x="816" y="364">-pc PacketConn</text>
+          <text class="member" x="816" y="391">-cfg ServerConfig</text>
+          <text class="member pub" x="816" y="418">+Serve(ctx) error</text>
+
+          <!-- Sample -->
+          <rect class="cls" x="800" y="455" width="320" height="215" rx="8"/>
+          <text class="cls-name" x="816" y="485">Sample</text>
+          <line class="cls-sep" x1="800" y1="499" x2="1120" y2="499"/>
+          <text class="member pub" x="816" y="523">+Seq uint64</text>
+          <text class="member pub" x="816" y="550">+SentAt time.Time</text>
+          <text class="member pub" x="816" y="577">+GotAt time.Time</text>
+          <text class="member pub" x="816" y="604">+Responded bool</text>
+          <text class="member pub" x="816" y="631">+Duplicate int</text>
+          <text class="member pub" x="816" y="658">+RTT time.Duration</text>
+
+          <!-- PacketConn -->
+          <rect class="cls iface" x="1160" y="60" width="330" height="200" rx="8"/>
+          <text class="cls-stereo" x="1325" y="84" text-anchor="middle">«interface»</text>
+          <text class="cls-name" x="1325" y="108" text-anchor="middle">PacketConn</text>
+          <text class="cls-role" x="1325" y="128" text-anchor="middle">узкая замена сети</text>
+          <line class="cls-sep" x1="1160" y1="140" x2="1490" y2="140"/>
+          <text class="member pub" x="1176" y="164">+ReadFromUDPAddrPort(buf []byte)</text>
+          <text class="member pub" x="1176" y="191">+WriteToUDPAddrPort(b, addr)</text>
+          <text class="member pub" x="1176" y="218">+SetReadDeadline(t time.Time)</text>
+          <text class="member pub" x="1176" y="245">+Close() error</text>
+
+          <!-- RealUDPConn -->
+          <rect class="cls" x="1145" y="330" width="200" height="80" rx="8"/>
+          <text class="cls-name" x="1161" y="360">RealUDPConn</text>
+          <line class="cls-sep" x1="1145" y1="374" x2="1345" y2="374"/>
+          <text class="member" x="1161" y="398">-conn *net.UDPConn</text>
+
+          <!-- FakeNetwork -->
+          <rect class="cls" x="1375" y="330" width="240" height="160" rx="8"/>
+          <text class="cls-name" x="1391" y="360">FakeNetwork</text>
+          <line class="cls-sep" x1="1375" y1="374" x2="1615" y2="374"/>
+          <text class="member" x="1391" y="398">-lossRate float64</text>
+          <text class="member" x="1391" y="425">-dupRate float64</text>
+          <text class="member" x="1391" y="452">-delayMin time.Duration</text>
+          <text class="member" x="1391" y="479">-delayMax time.Duration</text>
+
+          <!-- edges: associations -->
+          <path class="flow" d="M206,360 L206,305" marker-end="url(#cls-arr)"/>
+          <path class="flow" d="M356,430 L400,430" marker-end="url(#cls-arr)"/>
+          <path class="flow" d="M356,520 L400,520" marker-end="url(#cls-arr)"/>
+          <path class="flow" d="M740,575 L800,575" marker-end="url(#cls-arr)"/>
+          <path class="flow" d="M950,280 L950,220" marker-end="url(#cls-arr)"/>
+          <path class="flow" d="M800,330 L740,330" marker-end="url(#cls-arr)"/>
+          <path class="flow" d="M300,360 L300,30 L1325,30 L1325,60" marker-end="url(#cls-arr)"/>
+          <path class="flow" d="M1100,320 L1135,320 L1135,160 L1160,160" marker-end="url(#cls-arr)"/>
+
+          <!-- edges: realizations -->
+          <path class="flow impl" d="M1245,330 L1245,260" marker-end="url(#cls-arr)"/>
+          <path class="flow impl" d="M1450,330 L1450,260" marker-end="url(#cls-arr)"/>
+        </svg>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>16</span></div>
+        <aside class="notes">Тайминг: 0:55–1:08. Формат должен быть маленьким, но честным: по нему можно понять, что именно произошло с каждой пробой. Теперь диаграмма классов. Она отвечает на вопрос «где состояние и кто за него отвечает». Читаем не все поля подряд, а роли: ProbePacket — только формат; Client — сценарии эксперимента; Server — безопасное эхо с лимитами; Analyzer — вывод статистики из samples; PacketConn — узкая замена сети. [Акцент.] Если класс начинает знать и про сеть, и про формат, и про отчёт, он перестаёт быть классом и становится шкафом.</aside>
+      </section>
+
+      <!-- 17 · Эксперимент 1: ступенчатый перебор MTU --><section class="slide s-body" data-screen-label="17 Эксперимент 1 · ступенчатый перебор MTU" data-od-id="slide-mtu-ladder">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow">Эксперимент 1 · граница размера</p>
+        <h2 class="h-xl">Ступенчатый перебор MTU: ищем порог сериями.</h2>
+        <div class="ladder" data-od-id="ladder-sizes">
+          <span class="step">512</span>
+          <span class="step">1024</span>
+          <span class="step">1200</span>
+          <span class="step">1280</span>
+          <span class="step">1400</span>
+          <span class="step hot">1472</span>
+          <span class="step">1600</span>
+          <span class="step">2048</span>
+          <span class="step">4096</span>
+        </div>
+        <div class="cols" style="margin-top: 40px;">
+          <div class="col-card">
+            <h3>Потери растут плавно на всех размерах</h3>
+            <ul class="tick-list">
+              <li>Похоже на <b>общие потери от rate</b>, а не от размера</li>
+            </ul>
+          </div>
+          <div class="col-card">
+            <h3><span class="tag2">Потери резко включаются после порога</span></h3>
+            <ul class="tick-list minus">
+              <li>Подозреваем <b>fragmentation / PMTU</b> проблему</li>
+            </ul>
+          </div>
+        </div>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>17</span></div>
+        <aside class="notes">Тайминг: 1:08–1:24. Первая задача: найти границу размера — не теоретическую, а практическую для текущего пути и текущего инструмента. Для каждого размера шлём серию проб и считаем отдельно: потери на маленьких размерах; потери начиная с некоторого размера; резкий скачок потерь при переходе через порог. Одна потеря большого пакета ничего не доказывает — поэтому серия и повтор.</aside>
+      </section>
+
+      <!-- 18 · Аккуратная формулировка --><section class="slide s-hero" data-screen-label="18 Формулировка вывода" data-od-id="slide-careful-claim">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow dim">Важно · честность вывода</p>
+        <h2 class="h-xl">Пишем про этот путь, а не про сеть вообще.</h2>
+        <div class="claim-pair" data-od-id="claim-pair">
+          <div class="claim bad" data-od-id="claim-bad">
+            <span class="claim-mark">так нельзя</span>
+            <p>«MTU сети равен 1472 байтам»</p>
+          </div>
+          <div class="claim good" data-od-id="claim-good">
+            <span class="claim-mark">так правильно</span>
+            <p>«При этом пути и темпе 500 pps потери начинают расти после 1472 байт»</p>
+          </div>
+        </div>
+        <p class="lead" style="margin-top: 56px;">Одна потеря большого пакета <b>ничего не доказывает</b>: для каждого размера — серия и повтор.</p>
+        <aside class="notes">Тайминг: 1:08–1:24. [Важно.] Вывод формулируем аккуратно и с условиями эксперимента: «при данном пути и данном темпе отправки потери начинают расти после 1472 байт», а не «MTU равен 1472». Мы измерили свой путь своим инструментом — не «сеть вообще». Одна потеря большого пакета ничего не доказывает: для каждого размера — серия и повтор.</aside>
+      </section>
+
+      <!-- 18 · Эксперимент 2: train --><!-- 19 · Эксперимент 2: train --><section class="slide s-body s-panel" data-screen-label="19 Эксперимент 2 · train" data-od-id="slide-train">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow">Эксперимент 2 · длинный train с фиксированным rate</p>
+        <h2 class="h-xl">Разбираем результат по seq.</h2>
+        <div class="cols" style="grid-template-columns: 1fr 1.05fr; align-items: stretch;">
+          <div class="code" data-od-id="code-probe-result"><span class="kw">type</span> probeResult <span class="kw">struct</span> {
+    seq       uint64
+    sentAt    time.Time
+    gotAt     time.Time
+    responded bool
+    duplicate int
+    rtt       time.Duration
+}</div>
+          <div class="col-card">
+            <h3>Что считаем по ответам</h3>
+            <ul class="tick-list">
+              <li><b>потери (loss)</b> — seq отправлен, ответа нет до deadline</li>
+              <li><b>duplicate</b> — на один seq пришло больше одного ответа</li>
+              <li><b>reorder</b> — ответ на seq=N пришёл после ответа на seq=N+k</li>
+              <li><b>RTT</b> — gotAt − sentAt</li>
+              <li><b>jitter</b> — разброс RTT, не только среднее</li>
+            </ul>
+          </div>
+        </div>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>19</span></div>
+        <aside class="notes">Тайминг: 1:24–1:40. Вторая задача: отправить длинный train с фиксированным rate и разобрать результат. Клиент хранит probeResult на каждую пробу. По ответам считаем потери (loss), duplicate, reorder, RTT и jitter — разброс RTT, не только среднее.</aside>
+      </section>
+
+      <!-- 20 · Четыре случая потери --><section class="slide s-body" data-screen-label="20 Четыре случая потери" data-od-id="slide-loss-trap">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow dim">Ключевая ловушка</p>
+        <h2 class="h-xl">Потеря пробы ≠ потеря UDP request.</h2>
+        <div class="pt-grid four">
+          <div class="pt" data-od-id="loss-case-1">
+            <h3>01<span class="en">request потерян</span></h3>
+            <p>Сервер пробу вообще не видел.</p>
+          </div>
+          <div class="pt" data-od-id="loss-case-2">
+            <h3>02<span class="en">response потерян</span></h3>
+            <p>Сервер ответил, но ответ не доехал.</p>
+          </div>
+          <div class="pt" data-od-id="loss-case-3">
+            <h3>03<span class="en">server rate limit</span></h3>
+            <p>Сервер отбросил пробу по собственному лимиту.</p>
+          </div>
+          <div class="pt" data-od-id="loss-case-4">
+            <h3>04<span class="en">client не успел</span></h3>
+            <p>Ответ пришёл, но клиент не успел его прочитать.</p>
+          </div>
+        </div>
+        <p class="lead" style="margin-top: 44px;">В отчёте пишем не «UDP потерял 3%», а <b>«3% проб не получили response до deadline при таких-то условиях»</b>.</p>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>20</span></div>
+        <aside class="notes">Тайминг: 1:24–1:40. [Ключевая ловушка.] Потеря пробы не равна потере UDP request. Возможны четыре случая: request потерян, response потерян, server отбросил по rate limit, client не успел прочитать. Поэтому в отчёте пишем не «UDP потерял 3%», а «3% проб не получили response до deadline при таких-то условиях».</aside>
+      </section>
+
+      <!-- 21 · Эксперимент 3: sweep --><section class="slide s-body" data-screen-label="21 Эксперимент 3 · sweep" data-od-id="slide-sweep">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow">Эксперимент 3 · rate sweep</p>
+        <h2 class="h-xl">Ищем точку перегиба.</h2>
+        <div class="ladder" data-od-id="sweep-rates">
+          <span class="step">50 pps</span>
+          <span class="step">100 pps</span>
+          <span class="step">250 pps</span>
+          <span class="step">500 pps</span>
+          <span class="step">1000 pps</span>
+          <span class="step hot">2500 pps</span>
+        </div>
+        <div class="cols" style="margin-top: 40px;">
+          <div class="col-card">
+            <h3>Что считаем на каждом rate</h3>
+            <ul class="tick-list">
+              <li>Отправлено / получено ответов</li>
+              <li><b>доля потерь</b>, duplicate / reorder ratio</li>
+              <li><b>p50 / p95 / p99</b> RTT</li>
+              <li>Achieved <b>goodput</b></li>
+            </ul>
+          </div>
+          <div class="col-card">
+            <h3><span class="tag2">Колено</span></h3>
+            <ul class="tick-list minus">
+              <li><b>До точки перегиба:</b> RTT растёт умеренно, потерь почти нет</li>
+              <li><b>После точки перегиба:</b> очередь растёт, RTT улетает, потери идут пачками</li>
+            </ul>
+          </div>
+        </div>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>21</span></div>
+        <aside class="notes">Тайминг: 1:40–1:52. Третья задача: rate sweep. Фиксируем size, например 1200, и идём по rate. Задача — найти точку перегиба. До точки перегиба RTT растёт умеренно, потерь почти нет. После точки перегиба очередь начинает расти, RTT улетает, потери появляются пачками.</aside>
+      </section>
+
+      <!-- 22 · Вопрос: что сломалось --><section class="slide s-hero" data-screen-label="22 Вопрос · 2500 pps" data-od-id="slide-sweep-quiz">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow dim">Вопрос аудитории</p>
+        <h2 class="h-xl" style="max-width: 24ch;">Потери выросли на 2500 pps. Что сломалось?</h2>
+        <aside class="notes">Тайминг: 1:40–1:52. [Вопрос аудитории.] Если потери выросли на 2500 pps, что сломалось? Собираем версии зала, не подсказываем. Дальше — четыре правдоподобных ответа, по одному на слайд.</aside>
+      </section>
+
+      <!-- 23 · Ответ 01 --><section class="slide s-body" data-screen-label="23 Ответ 01" data-od-id="slide-sweep-answer-01">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow dim">Потери выросли на 2500 pps — что сломалось?</p>
+        <p class="eyebrow" style="margin-top: 56px;">Ответ 01</p>
+        <h2 class="h-xl" style="max-width: 26ch;">Сеть не выдержала rate.</h2>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>23</span></div>
+        <aside class="notes">Тайминг: 1:40–1:52. Ответ 01: сеть не выдержала rate. Возможно: переполнилась очередь на промежуточном узле, и датаграммы роняются по пути.</aside>
+      </section>
+
+      <!-- 24 · Ответ 02 --><section class="slide s-body" data-screen-label="24 Ответ 02" data-od-id="slide-sweep-answer-02">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow dim">Потери выросли на 2500 pps — что сломалось?</p>
+        <p class="eyebrow" style="margin-top: 56px;">Ответ 02</p>
+        <h2 class="h-xl" style="max-width: 26ch;">Сработал rate limit сервера.</h2>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>24</span></div>
+        <aside class="notes">Тайминг: 1:40–1:52. Ответ 02: сработал rate limit сервера. Сервер намеренно отбрасывает лишнее — это его защита, а не авария сети.</aside>
+      </section>
+
+      <!-- 25 · Ответ 03 --><section class="slide s-body" data-screen-label="25 Ответ 03" data-od-id="slide-sweep-answer-03">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow dim">Потери выросли на 2500 pps — что сломалось?</p>
+        <p class="eyebrow" style="margin-top: 56px;">Ответ 03</p>
+        <h2 class="h-xl" style="max-width: 26ch;">Клиент сам не успевает отправлять и читать.</h2>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>25</span></div>
+        <aside class="notes">Тайминг: 1:40–1:52. Ответ 03: клиент сам не успевает отправлять и читать. Тогда «потери» — не сеть, а наш собственный event loop.</aside>
+      </section>
+
+      <!-- 26 · Ответ 04 --><section class="slide s-body" data-screen-label="26 Ответ 04" data-od-id="slide-sweep-answer-04">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow dim">Потери выросли на 2500 pps — что сломалось?</p>
+        <p class="eyebrow" style="margin-top: 56px;">Ответ 04</p>
+        <h2 class="h-xl" style="max-width: 26ch;">Переполнен буфер сокета.</h2>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>26</span></div>
+        <aside class="notes">Тайминг: 1:40–1:52. Ответ 04: переполнен буфер сокета. Ядро роняет датаграммы до того, как их прочитало приложение. Четыре причины — и без метрик с обеих сторон их не различить.</aside>
+      </section>
+
+      <!-- 27 · Итог: четыре версии --><section class="slide s-hero" data-screen-label="27 Итог · 2500 pps" data-od-id="slide-sweep-summary">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow dim">Потери выросли на 2500 pps — что сломалось?</p>
+        <p class="eyebrow" style="margin-top: 40px;">Итог</p>
+        <h2 class="h-xl" style="max-width: 26ch;">Четыре версии — и все правдоподобны.</h2>
+        <ul class="tick-list" style="margin-top: 40px; max-width: 62ch;">
+          <li><b>01</b> — сеть не выдержала rate: переполнилась очередь на промежуточном узле</li>
+          <li><b>02</b> — сработал rate limit сервера: лишнее отброшено намеренно</li>
+          <li><b>03</b> — клиент сам не успевает отправлять и читать</li>
+          <li><b>04</b> — переполнен буфер сокета: ядро роняет датаграммы до приложения</li>
+        </ul>
+        <p class="lead" style="margin-top: 40px;">Без метрик <b>с обеих сторон</b> их не различить — поэтому udpprobe собирает статистику и на клиенте, и на сервере.</p>
+        <aside class="notes">Тайминг: 1:40–1:52. Итог по вопросу 2500 pps. Свести четыре ответа в один список: сеть, rate limit сервера, медленный клиент, буфер сокета. [Акцент.] По одному графику потерь эти причины неотличимы — нужны метрики с обеих сторон: что отправил клиент, что увидел сервер, что вернулось. Это и есть вывод эксперимента sweep: инструмент должен мерить обе стороны, иначе мы спорим о версиях, а не о данных.</aside>
+      </section>
+
+      <!-- 28 · Что сдавать --><section class="slide s-body" data-screen-label="28 Что сдавать" data-od-id="slide-submission">
+        <div class="brand">СЕТЬ_КОД<span class="cur">▌</span></div>
+        <p class="eyebrow">Сдача задачи</p>
+        <h2 class="h-xl">Что сдавать</h2>
+        <div class="cols">
+          <div class="col-card" data-od-id="submission-requirements">
+            <h3>Требования сдачи</h3>
+            <ul class="tick-list">
+              <li>Репозиторий на <b>GitVerse</b> — обязательно открытый и публичный</li>
+              <li>В соавторы/участники репозитория добавить пользователя <code>ars</code></li>
+            </ul>
+          </div>
+          <div class="col-card" data-od-id="submission-acceptance">
+            <h3>Acceptance criteria</h3>
+            <ul class="tick-list">
+              <li>Probe packet имеет <b>protocol / version / seq / timestamp / size</b></li>
+              <li><code>mtu</code>, <code>train</code>, <code>sweep</code> дают воспроизводимый <b>JSON</b></li>
+              <li>Fake network тесты</li>
+              <li>Отчёт</li>
+              <li><code>go test -race</code> проходит</li>
+            </ul>
+          </div>
+        </div>
+        <div class="s-foot"><span>лекция 03 · udpprobe</span><span>28</span></div>
+        <aside class="notes">Тайминг: 1:52–2:00. Что сдавать. Требования: репозиторий на GitVerse, обязательно открытый и публичный; в соавторы добавить пользователя ars. Acceptance criteria: probe packet имеет protocol/version/seq/timestamp/size; mtu, train, sweep дают воспроизводимый JSON; fake network тесты; отчёт; go test -race проходит.</aside>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- Framework chrome — DO NOT EDIT below this line. -->
+  <nav class="deck-counter" role="navigation" aria-label="Deck navigation">
+    <button type="button" id="deck-prev" aria-label="Previous slide">‹</button>
+    <span class="deck-count"><span id="deck-cur">01</span> <span class="total">/ <span id="deck-total">01</span></span></span>
+    <button type="button" id="deck-next" aria-label="Next slide">›</button>
+  </nav>
+  <div class="deck-hint">← / → · space · R reset</div>
+
+  <script>
+    (function () {
+      var stage = document.getElementById('deck-stage');
+      var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+      var prev = document.getElementById('deck-prev');
+      var next = document.getElementById('deck-next');
+      var cur = document.getElementById('deck-cur');
+      var total = document.getElementById('deck-total');
+      var STORE = 'deck:idx:' + (location.pathname || '/');
+      var idx = 0;
+
+      // ---- scale-to-fit ---------------------------------------------------
+      function fit() {
+        var sw = window.innerWidth;
+        var sh = window.innerHeight;
+        var pad = 32;
+        var s = Math.min((sw - pad) / 1920, (sh - pad) / 1080);
+        if (!isFinite(s) || s <= 0) s = 1;
+        var tx = (sw - 1920 * s) / 2;
+        var ty = (sh - 1080 * s) / 2;
+        stage.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + s + ')';
+      }
+
+      // ---- navigation -----------------------------------------------------
+      function pad2(n) { return (n < 10 ? '0' : '') + n; }
+      function paint() {
+        slides.forEach(function (el, i) { el.classList.toggle('active', i === idx); });
+        if (cur) cur.textContent = pad2(idx + 1);
+        if (total) total.textContent = pad2(slides.length);
+        if (prev) prev.toggleAttribute('disabled', idx <= 0);
+        if (next) next.toggleAttribute('disabled', idx >= slides.length - 1);
+        postDeckState();
+      }
+      function go(i) {
+        idx = Math.max(0, Math.min(slides.length - 1, i));
+        paint();
+        try { localStorage.setItem(STORE, String(idx)); } catch (_) {}
+      }
+      var OD_DECK_PROTOCOL_VERSION = 1;
+      function postDeckState() {
+        try {
+          window.parent.postMessage({
+            type: 'od:slide-state',
+            protocolVersion: OD_DECK_PROTOCOL_VERSION,
+            active: idx,
+            count: slides.length
+          }, '*');
+        } catch (_) {}
+      }
+      function announceDeckProtocol() {
+        try {
+          window.parent.postMessage({
+            type: 'od:deck-ready',
+            protocolVersion: OD_DECK_PROTOCOL_VERSION,
+            capabilities: ["absolute-navigation","state-events"]
+          }, '*');
+        } catch (_) {}
+      }
+      window.addEventListener('message', function (event) {
+        var data = event && event.data;
+        if (!data || data.type !== 'od:slide') return;
+        if (data.protocolVersion != null && data.protocolVersion !== OD_DECK_PROTOCOL_VERSION) return;
+        var target = idx;
+        if (data.action === 'go') {
+          if (typeof data.index !== 'number' || !isFinite(data.index)) return;
+          target = Math.floor(data.index);
+        } else if (data.action === 'next') target = idx + 1;
+        else if (data.action === 'prev') target = idx - 1;
+        else if (data.action === 'first') target = 0;
+        else if (data.action === 'last') target = slides.length - 1;
+        else return;
+        go(target);
+      });
+      function onKey(e) {
+        if (e.__odDeckKeyHandled) return;
+        var t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+        if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.__odDeckKeyHandled = true; e.preventDefault(); go(idx + 1); }
+        else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.__odDeckKeyHandled = true; e.preventDefault(); go(idx - 1); }
+        else if (e.key === 'Home' || String(e.key).toLowerCase() === 'r') { e.__odDeckKeyHandled = true; e.preventDefault(); go(0); }
+        else if (e.key === 'End') { e.__odDeckKeyHandled = true; e.preventDefault(); go(slides.length - 1); }
+      }
+      // Capture phase + listen on both targets — inside the OD iframe,
+      // focus may be on window OR document; a single non-capture listener
+      // silently misses presses.
+      window.addEventListener('keydown', onKey, true);
+      document.addEventListener('keydown', onKey, true);
+      if (prev) prev.addEventListener('click', function () { go(idx - 1); });
+      if (next) next.addEventListener('click', function () { go(idx + 1); });
+      document.addEventListener('click', function (e) {
+        if (e.defaultPrevented) return;
+        if (e.button !== undefined && e.button !== 0) return;
+        if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+        var t = e.target;
+        while (t && t !== document.body && t !== document.documentElement) {
+          var tag = String(t.tagName || '').toUpperCase();
+          if (
+            tag === 'A' ||
+            tag === 'BUTTON' ||
+            tag === 'INPUT' ||
+            tag === 'TEXTAREA' ||
+            tag === 'SELECT' ||
+            t.isContentEditable ||
+            t.getAttribute('role') === 'button' ||
+            t.getAttribute('role') === 'link'
+          ) return;
+          t = t.parentElement;
+        }
+        focusDeck();
+        if (e.clientX < window.innerWidth / 2) go(idx - 1);
+        else go(idx + 1);
+      }, true);
+
+      // Auto-focus body so arrow keys work without an initial click.
+      document.body.setAttribute('tabindex', '-1');
+      document.body.style.outline = 'none';
+      function focusDeck() { try { window.focus(); document.body.focus({ preventScroll: true }); } catch (_) {} }
+      document.addEventListener('mousedown', focusDeck);
+      window.addEventListener('load', focusDeck);
+
+      // Restore last position.
+      try {
+        var saved = parseInt(localStorage.getItem(STORE) || '0', 10);
+        if (!isNaN(saved) && saved >= 0 && saved < slides.length) idx = saved;
+      } catch (_) {}
+
+      window.addEventListener('resize', fit);
+      announceDeckProtocol();
+      fit();
+      paint();
+      focusDeck();
+    })();
+  </script>
+
+<script type="application/json" id="speaker-notes">
+[
+  "Тайминг: 0:00–0:07. Открытие. Сегодня меняем характер задачи. UDP echo мы уже умеем — это полезный минимум, но он слишком быстро превращается в «написал — забыл». Следующая задача — не просто сетевая программа, а инструмент исследования границ UDP. Назовём его udpprobe.",
+  "Тайминг: 0:00–0:07. Сложность здесь не в синтаксисе. Сложность в том, чтобы не обмануть самого себя. Если пакет не вернулся, причин может быть пять.",
+  "Тайминг: 0:00–0:07. Прочитать список вопросов. [Пауза.] Это и есть спецификация инструмента: каждый вопрос превратится в режим работы или в метрику отчёта.",
+  "Тайминг: 0:07–0:18. Прежде чем открыть редактор — карта компонентов. CLI только разбирает subcommands и собирает зависимости. Вся логика — в internal/probe: codec, client, server, analyzer, report. Ключевой шов — интерфейс PacketConn: через него RealUDPConn и FakeNetwork взаимозаменяемы, поэтому сценарий с потерями, дубликатами и нарушением порядка можно прогнать вообще без сети.",
+  "Тайминг: 0:07–0:18. Начнём с инструментов Go, которые понадобятся для такого проекта. Не для демо на один запуск, а для инструмента, которым можно пользоваться. Почему internal? Потому что это учебный инструмент с понятными границами, а не публичная библиотека.",
+  "Тайминг: 0:07–0:18. [Акцент.] Хороший сетевой инструмент должен быть собран как маленький протокол, а не как набор main.go с глобальными переменными.",
+  "Тайминг: 0:18–0:30. Инструмент исследования UDP легко превратить во flooder. Поэтому проект начинается не с send, а с ограничений. Разобрать четыре команды: server, mtu, train, sweep.",
+  "Тайминг: 0:18–0:30. [Ключевая фраза.] Проговорить медленно. Инструмент, который исследует потери, не должен сам становиться источником аварии.",
+  "Тайминг: 0:30–0:43. Для адресов используем netip.AddrPort, а не строки. Сеть читаем через net.UDPConn в реальном режиме и через PacketConn в тестах. Это уже знакомый интерфейс — он важен не только для miniQUIC, но и для исследования.",
+  "Тайминг: 0:30–0:43. [Вопрос аудитории.] Спросить зал: почему нельзя начинать сразу с реальной сети? Собрать ответы, не подсказывая. Следующий слайд — ответ и порядок калибровки.",
+  "Тайминг: 0:30–0:43. [Вопрос аудитории.] Почему нельзя начинать сразу с реальной сети? [Ответы.] Потому что мы не поймём, инструмент измерил сеть или свою же ошибку. Сначала fake network с известными параметрами, потом реальный путь.",
+  "Тайминг: 0:43–0:55. Нам нужны: time.Now() для send/receive timestamps; time.Ticker для равномерной отправки; time.Timer для deadline конкретной фазы; time.Since для RTT; монотонное время Go для измерений длительности.",
+  "Тайминг: 0:43–0:55. Разобрать пример равномерной отправки через Ticker. Rate limit нужен в обе стороны: клиент не должен превращаться в шторм, сервер не должен отвечать быстрее, чем разрешено. [Акцент.] Если инструмент не контролирует темп, он измеряет не сеть, а собственную невоспитанность.\n\nЭто цикл равномерной отправки probe-пакетов с возможностью остановиться по context.\n\n По строкам:\n\n ```go\n   ticker := time.NewTicker(interval)\n ```\n\n Создаём тикер. Раз в interval он отправляет значение времени в канал ticker.C.\n\n Важно: первый тик придёт не сразу, а через один interval.\n\n ```go\n   defer ticker.Stop()\n ```\n\n Когда функция выйдет — обязательно остановить тикер. Иначе таймер останется жить и будет утечка ресурса.\n\n ```go\n   for seq := uint64(0); seq \u003c count; seq++ {\n ```\n\n Цикл по номерам probe. seq имеет тип uint64, потому что номера пакетов у нас беззнаковые. Значит count тоже должен быть uint64, иначе будет ошибка сравнения типов.\n\n ```go\n   select {\n ```\n\n select ждёт, какой из каналов сработает первым. Это главный способ в Go ждать несколько событий одновременно.\n\n ```go\n   case \u003c-ticker.C:\n       sendProbe(seq)\n ```\n\n Если пришёл тик — отправляем probe с текущим номером seq.\n\n ```go\n   case \u003c-ctx.Done():\n       return ctx.Err()\n ```\n\n Если контекст отменили или у него истёк deadline — выходим из функции сразу и возвращаем причину: context.Canceled или context.DeadlineExceeded.\n\n Идея в целом:\n\n ```text\n   каждый interval:\n       если не отменили — отправить следующий seq\n       если отменили — выйти\n ```\n\n Два тонких момента:\n\n 1. Если sendProbe(seq) работает дольше interval, реальный темп будет ниже, чем задумано. У time.Ticker канал маленький, тики не копятся бесконечно.\n 2. Если одновременно готовы и ticker.C, и ctx.Done(), select выберет случайным образом. Поэтому после цикла иногда дополнительно проверяют ctx.Err(), если важно не\n    отправить лишний пакет при гонке.",
+  "Тайминг: 0:55–1:08. Нужен маленький probe protocol поверх UDP. Не production, но аккуратный. Пройтись по полям формата.",
+  "Тайминг: 0:55–1:08. Почему send_ts внутри? Потому что сервер должен вернуть его обратно, и клиент посчитает RTT без доверия часам сервера. Почему size явно? Потому что мы исследуем размер. Почему protocol/version? Потому что UDP socket может получить чужой мусор. [Акцент.] Формат должен быть маленьким, но честным.\n\nТермин magic number / magic cookie чаще всего означает: фиксированная последовательность байт в начале, по которой быстро понимают «это вообще наш\n формат/протокол?». Это не защита, а маркер формата.\n\n Примеры.\n\n Сетевые протоколы\n\n - DHCP/BOOTP: в начале options есть magic cookie = 0x63825363. По нему понимают, что дальше идут DHCP options в стиле RFC, а не старый vendor-specific формат.\n\n - STUN/TURN: в заголовке есть magic cookie = 0x2112A442. STUN используется для NAT traversal, ICE/WebRTC.\n\n - PPP LCP: есть опция Magic-Number. Она нужна не для формата, а чтобы заметить looped-back link: если видишь свой же magic number, линия завернута сама в себя.\n\n - HTTP/2: connection preface начинается со строки:\n\n   ```text\n     PRI * HTTP/2.0\\r\\n\\r\\nSM\\r\\n\\r\\n\n   ```\n\n   По сути это magic/preface, чтобы отличить HTTP/2 от HTTP/1.1 на том же TCP-порту.\n\n - Bitcoin P2P: у сообщений есть network magic bytes, например mainnet 0xF9BEB4D9. По ним узлы отличают mainnet/testnet/regtest и мусор в потоке.",
+  "Тайминг: 0:55–1:08. Формат должен быть маленьким, но честным: по нему можно понять, что именно произошло с каждой пробой. Теперь диаграмма классов. Она отвечает на вопрос «где состояние и кто за него отвечает». Читаем не все поля подряд, а роли: ProbePacket — только формат; Client — сценарии эксперимента; Server — безопасное эхо с лимитами; Analyzer — вывод статистики из samples; PacketConn — узкая замена сети. [Акцент.] Если класс начинает знать и про сеть, и про формат, и про отчёт, он перестаёт быть классом и становится шкафом.",
+  "Тайминг: 1:08–1:24. Первая задача: найти границу размера — не теоретическую, а практическую для текущего пути и текущего инструмента. Для каждого размера шлём серию проб и считаем отдельно: потери на маленьких размерах; потери начиная с некоторого размера; резкий скачок потерь при переходе через порог. Одна потеря большого пакета ничего не доказывает — поэтому серия и повтор.",
+  "Тайминг: 1:08–1:24. [Важно.] Всё равно вывод формулируем аккуратно: «при данном пути и данном rate потери начинают расти после X», а не «MTU равен X».",
+  "Тайминг: 1:24–1:40. Вторая задача: отправить длинный train с фиксированным rate и разобрать результат. Клиент хранит probeResult на каждую пробу. По ответам считаем потери (loss), duplicate, reorder, RTT и jitter — разброс RTT, не только среднее.",
+  "Тайминг: 1:24–1:40. [Ключевая ловушка.] Потеря пробы не равна потере UDP request. Возможны четыре случая: request потерян, response потерян, server отбросил по rate limit, client не успел прочитать. Поэтому в отчёте пишем не «UDP потерял 3%», а «3% проб не получили response до deadline при таких-то условиях».",
+  "Тайминг: 1:40–1:52. Третья задача: rate sweep. Фиксируем size, например 1200, и идём по rate. Задача — найти точку перегиба. До точки перегиба RTT растёт умеренно, потерь почти нет. После точки перегиба очередь начинает расти, RTT улетает, потери появляются пачками.",
+  "Тайминг: 1:40–1:52. [Вопрос аудитории.] Если потери выросли на 2500 pps, что сломалось? Собираем версии зала, не подсказываем. Дальше — четыре правдоподобных ответа, по одному на слайд.",
+  "Тайминг: 1:40–1:52. Ответ 01: сеть не выдержала rate. Возможно: переполнилась очередь на промежуточном узле, и датаграммы роняются по пути.",
+  "Тайминг: 1:40–1:52. Ответ 02: сработал rate limit сервера. Сервер намеренно отбрасывает лишнее — это его защита, а не авария сети.",
+  "Тайминг: 1:40–1:52. Ответ 03: клиент сам не успевает отправлять и читать. Тогда «потери» — не сеть, а наш собственный event loop.",
+  "Тайминг: 1:40–1:52. Ответ 04: переполнен буфер сокета. Ядро роняет датаграммы до того, как их прочитало приложение. Четыре причины — и без метрик с обеих сторон их не различить.",
+  "Тайминг: 1:40–1:52. Итог по вопросу 2500 pps. Свести четыре ответа в один список: сеть, rate limit сервера, медленный клиент, буфер сокета. [Акцент.] По одному графику потерь эти причины неотличимы — нужны метрики с обеих сторон: что отправил клиент, что увидел сервер, что вернулось. Это и есть вывод эксперимента sweep: инструмент должен мерить обе стороны, иначе мы спорим о версиях, а не о данных.",
+  "Тайминг: 1:52–2:00. Что сдавать. Требования: репозиторий на GitVerse, обязательно открытый и публичный; в соавторы добавить пользователя ars. Acceptance criteria: probe packet имеет protocol/version/seq/timestamp/size; mtu, train, sweep дают воспроизводимый JSON; fake network тесты; отчёт; go test -race проходит."
+]
+</script>
+</body></html>

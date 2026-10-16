@@ -1,0 +1,23 @@
+[package]
+name = "udpprobe"
+version = "0.1.0"
+edition = "2024"
+description = "UDP path experiments with bounded traffic and reproducible reports"
+license = "MIT"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+ctrlc = { version = "3.4", features = ["termination"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
